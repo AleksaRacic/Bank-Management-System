@@ -28,10 +28,9 @@ import javax.ws.rs.core.Response;
  *
  * @author HP
  */
-@Path("filijala")
+@Path("komitent")
 @Stateless
-public class FilijalaResource {
-    
+public class KomitentResource {
     @Resource(lookup = "jms/__defaultConnectionFactory")
     public ConnectionFactory cf;
     
@@ -43,18 +42,18 @@ public class FilijalaResource {
     
     @POST
     @Path("post/{naziv}/{adresa}/{mesto}")
-    public Response postFilijala(@PathParam("naziv") String naziv, @PathParam("adresa") String adresa, @PathParam("mesto") String mesto){
+    public Response postKomitent(@PathParam("naziv") String naziv, @PathParam("adresa") String adresa, @PathParam("mesto") String mesto){
         
         JMSContext context = cf.createContext();
         JMSProducer producer = context.createProducer();
         Message msg = context.createMessage();
-        
+        //
         try {
             msg.setStringProperty("naziv", naziv);
             msg.setStringProperty("mesto", mesto);
             msg.setStringProperty("adresa", adresa);
             msg.setIntProperty("p", 1);
-            msg.setStringProperty("tabela", "filijala");
+            msg.setStringProperty("tabela", "komitent");
             msg.setBooleanProperty("get", false);
         } catch (JMSException ex) {
             Logger.getLogger(MestoResource.class.getName()).log(Level.SEVERE, null, ex);
@@ -71,14 +70,14 @@ public class FilijalaResource {
     //TODO prebaciti try, catch blok iznad
     @GET
     @Path("get")
-    public Response getFilijala(){
+    public Response getKomitent(){
         JMSContext context = cf.createContext();
         JMSProducer producer = context.createProducer();
         JMSConsumer consumer = context.createConsumer(serverQueue);
         Message msg = context.createMessage();
         System.out.println("CheckpointGet\n\n");
         try {
-            msg.setStringProperty("tabela", "filijala");
+            msg.setStringProperty("tabela", "komitent");
             msg.setIntProperty("p", 1);
             msg.setBooleanProperty("get", true);
         } catch (JMSException ex) {
@@ -87,7 +86,7 @@ public class FilijalaResource {
         
         System.out.println("PoslanaPoruka");
         producer.send(topic, msg);
-        Message receivedMessage = consumer.receive(1000);
+        Message receivedMessage = consumer.receive(10000);
         System.out.println("POST> primio poruku");
         if(receivedMessage instanceof ObjectMessage){
             try {

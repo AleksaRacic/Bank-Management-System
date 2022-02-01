@@ -8,6 +8,7 @@ package podsistem1;
 import entities.Filijala;
 import entities.Komitent;
 import entities.Mesto;
+import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.logging.Level;
@@ -22,6 +23,10 @@ import javax.jms.Message;
 import javax.jms.ObjectMessage;
 import javax.jms.Queue;
 import javax.jms.Topic;
+import javax.json.Json;
+import javax.json.JsonArray;
+import javax.json.JsonArrayBuilder;
+import javax.json.JsonObject;
 import javax.persistence.EntityManager;
 import javax.persistence.EntityManagerFactory;
 import javax.persistence.Persistence;
@@ -74,28 +79,42 @@ public class Main {
                             TypedQuery<Mesto> qMesta = em.createQuery("SELECT m FROM Mesto m", Mesto.class);
                             List<Mesto> mesta = qMesta.getResultList();
                             ArrayList<Mesto> mestaArray = new ArrayList<Mesto>(mesta);
+                            JsonArrayBuilder lista= Json.createArrayBuilder();
                             for(Mesto m : mestaArray){
-                                m.setFilijalaList(null);
-                                m.setKomitentList(null);
+                                lista.add(Json.createObjectBuilder()
+                                .add("idMesto", m.getIdMesto())
+                                .add("naziv", m.getNaziv())
+                                .add("postanskiBroj", m.getPostanskiBroj()));
+       
                             }
-                            System.out.println(mestaArray);
-                            omsg = context.createObjectMessage(mestaArray);
+                            JsonObject toSend = Json.createObjectBuilder()
+                                    .add("mesta", lista).build();
+                            System.out.println(toSend);
+                            omsg = context.createObjectMessage(toSend.toString());
                             omsg.setIntProperty("server", 1);
                             producer.send(serverQueue, omsg);
                             break;
+
                             
                         case "filijala":
                             System.out.println("mestoGet");
                             TypedQuery<Filijala> qFilijala = em.createQuery("SELECT f FROM Filijala f", Filijala.class);
                             List<Filijala> filijale = qFilijala.getResultList();
                             ArrayList<Filijala> filijalaArray = new ArrayList<Filijala>(filijale);
-                            
-                            for(Filijala fil : filijalaArray){
-                                tmpMesto = 
-                                fil.setIdMesto();
+                            JsonArrayBuilder listaFilijala = Json.createArrayBuilder();
+                            for(Filijala f : filijalaArray){
+                                listaFilijala.add(Json.createObjectBuilder()
+                                .add("idFilijala", f.getIdFilijala())
+                                .add("naziv", f.getNaziv())
+                                .add("adresa", f.getAdresa())
+                                .add("mesto", f.getIdMesto().getNaziv()));
+       
                             }
-                            System.out.println(filijalaArray);
-                            omsg = context.createObjectMessage(filijalaArray);
+                            JsonObject filijalaToSend = Json.createObjectBuilder()
+                                    .add("filijale", listaFilijala).build();
+                            
+                            System.out.println(filijalaToSend);
+                            omsg = context.createObjectMessage(filijalaToSend.toString());
                             omsg.setIntProperty("server", 1);
                             break;
                         
@@ -104,8 +123,19 @@ public class Main {
                             TypedQuery<Komitent> qKomitent = em.createQuery("SELECT k FROM Komitent k", Komitent.class);
                             List<Komitent> komitenti = qKomitent.getResultList();
                             ArrayList<Komitent> komitentArray = new ArrayList<Komitent>(komitenti);
-                            System.out.println(komitentArray);
-                            omsg = context.createObjectMessage(komitentArray);
+                            JsonArrayBuilder listaKomitenata = Json.createArrayBuilder();
+                            for(Komitent k : komitentArray){
+                                listaKomitenata.add(Json.createObjectBuilder()
+                                .add("idKomitent", k.getIdKomitent())
+                                .add("naziv", k.getNaziv())
+                                .add("adresa", k.getAdresa())
+                                .add("mesto", k.getSediste().getNaziv()));
+       
+                            }
+                            JsonObject komitentToSend = Json.createObjectBuilder()
+                                    .add("filijale", listaKomitenata).build();
+                            System.out.println(komitentToSend);
+                            omsg = context.createObjectMessage(komitentToSend.toString());
                             omsg.setIntProperty("server", 1);
                             break;
 
