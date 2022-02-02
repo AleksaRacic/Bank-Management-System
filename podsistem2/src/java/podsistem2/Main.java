@@ -5,10 +5,9 @@
  */
 package podsistem2;
 
+import container.Container;
 import entities.Racun;
-import entities.Racun_;
 import entities.Transakcija;
-import java.math.BigDecimal;
 import java.sql.Timestamp;
 import java.util.ArrayList;
 import java.util.List;
@@ -38,7 +37,7 @@ import javax.validation.ConstraintViolationException;
  *
  * @author HP
  */
-public class Main {
+public class Main implements Runnable{
 
     @Resource(lookup = "jms/__defaultConnectionFactory")
     static private ConnectionFactory cf;
@@ -49,18 +48,26 @@ public class Main {
     @Resource(lookup = "serverQueue")
     static public Queue serverQueue;
     
+    @Resource(lookup = "backupTopic")
+    static public Topic backupTopic;
+    
     JMSContext context;
     JMSConsumer consumer;
     JMSProducer producer;
     EntityManagerFactory emf;
     EntityManager em;
+    JMSConsumer backupConsumer;
+    static ArrayList<Container> updateList = new ArrayList<>();
     
     public Main(){
         context = cf.createContext();
         context.setClientID("p2");
-        consumer = context.createDurableConsumer(topic, "p2", "p=2" , true);//dodati ovde filter
+        consumer = context.createDurableConsumer(topic, "p2", "p=2" , true);
+        backupConsumer = context.createDurableConsumer(backupTopic, "po2", "p=2" , true);
         producer = context.createProducer();
-        System.out.println("Pokrecem podsistem 1");
+        emf = Persistence.createEntityManagerFactory("podsistem2PU");
+        em = emf.createEntityManager();
+        System.out.println("Pokrecem podsistem 2");
     }
     
     @Override
@@ -71,16 +78,71 @@ public class Main {
     
     private void runClient(){
         ObjectMessage omsg = null;
+        Container c1 = null;
+        Container c2 = null;
         while(true){
             try {
                 System.out.println("Ceka poruku");
                 Message msg = this.consumer.receive();
                 System.out.println("Primio");
-                emf = Persistence.createEntityManagerFactory("podsistem2PU");
-                em = emf.createEntityManager();
-                
                 if(msg.getBooleanProperty("get")){
                     switch(msg.getStringProperty("tabela")){
+                        case "diff":
+                            JsonArrayBuilder listaRac= Json.createArrayBuilder();
+                            JsonArrayBuilder listaTrans= Json.createArrayBuilder();
+                            Racun tmpRac;
+                            Transakcija tmpTrans;
+                            for(Container c : updateList){
+                                switch(c.getIme()){
+                                    case "Racun":
+                                        tmpRac = (Racun)c.getKlasa();
+                                        JsonObjectBuilder tmpObj2 = Json.createObjectBuilder()
+                                        .add("potrazuje", tmpRac.getPotrazuje())
+                                        .add("duguje", tmpRac.getDuguje())
+                                        .add("status", tmpRac.getStatus())
+                                        .add("timestamp",tmpRac.getTimestamp().toString())
+                                        .add("broj_transakcija", tmpRac.getBrojTransakcija())
+                                        .add("dozvoljen_minus", tmpRac.getDozvoljeniMinus());
+                                        if(tmpRac.getIdRacun()!=null){
+                                            tmpObj2.add("idTransakcija", tmpRac.getIdRacun());
+                                        }
+                                        listaRac.add(tmpObj2);
+                                        break;
+                                    case "Transakcija":
+                                        tmpTrans = (Transakcija)c.getKlasa();
+                                        System.out.println(tmpTrans.getIdFilijala());
+                                        JsonObjectBuilder tmpObj1 = Json.createObjectBuilder()
+                                        .add("timestamp", tmpTrans.getTimestamp().toString())
+                                        .add("iznos", tmpTrans.getIznos())
+                                        .add("redni_broj",tmpTrans.getRedniBroj());
+                                        
+                                        if(tmpTrans.getIdFilijala()!=null){
+                                            tmpObj1.add("filijala", tmpTrans.getIdFilijala());
+                                        }
+                                        if(tmpTrans.getIdRacunDo()!=null){
+                                            tmpObj1.add("racun_uplata", tmpTrans.getIdRacunDo().getIdRacun());
+                                        }
+                                        if(tmpTrans.getIdRacunOd()!=null){
+                                            tmpObj1.add("racun_isplata", tmpTrans.getIdRacunOd().getIdRacun());
+                                        }
+                                        if(tmpTrans.getIdTransakcija()!=null){
+                                            tmpObj1.add("idTransakcija", tmpTrans.getIdTransakcija());
+                                        }
+                                        listaTrans.add(tmpObj1);
+                                        break;
+                                        
+                                }
+                            }
+                            JsonObject toSend12 = Json.createObjectBuilder()
+                                .add("Racun", listaRac)
+                                .add("Transakcije", listaTrans).build();
+                            System.out.println(toSend12);
+                            omsg = context.createObjectMessage(toSend12.toString());
+                            omsg.setIntProperty("server", 1);
+                            producer.send(serverQueue, omsg);
+    
+                            break;
+                        
                         case "racun":
                             TypedQuery<Racun> q1 = em.createNamedQuery("Racun.findByKomitent", Racun.class)
                                     .setParameter("komitent", msg.getIntProperty("komitent"));
@@ -134,14 +196,10 @@ public class Main {
                             JsonObject toSend1 = Json.createObjectBuilder()
                                     .add("transakcije", lista1)
                                     .add("racun", msg.getIntProperty("racun")).build();
-                            System.out.println(toSend1);
+
                             omsg = context.createObjectMessage(toSend1.toString());
                             omsg.setIntProperty("server", 1);
                             producer.send(serverQueue, omsg);
-                            break;
-                        
-                        case "komitent":
-                            
                             break;
 
                     }
@@ -163,6 +221,7 @@ public class Main {
                                 ra.setPotrazuje(0);
                                 ra.setStatus("A");
                                 ra.setBrojTransakcija(0);
+                                updateList.add(new Container(new Racun(ra), "Racun"));
                                 em.persist(ra);
                                 break;
 
@@ -201,6 +260,13 @@ public class Main {
                                 trans.setRedniBroj(brTransDo + 1);
                                 trans.setIdRacunDo(RacDo);
                                 trans.setIdRacunOd(RacOd);
+                                c1 = new Container(new Racun(RacDo), "Racun");
+                                c1.setMerge();
+                                updateList.add(c1);
+                                c2 = new Container(new Racun(RacOd), "Racun");
+                                c2.setMerge();
+                                updateList.add(c2);
+                                updateList.add(new Container(new Transakcija(trans), "Transakcija"));
                                 em.persist(RacDo);
                                 em.persist(RacOd);
                                 em.persist(trans);
@@ -234,6 +300,10 @@ public class Main {
                                 trans1.setRedniBroj(brTransDo1 + 1);
                                 trans1.setIdRacunDo(RacDo1);
                                 trans1.setIdFilijala(filijala);
+                                c1 = new Container(new Racun(RacDo1), "Racun");
+                                c1.setMerge();
+                                updateList.add(c1);
+                                updateList.add(new Container(new Transakcija(trans1), "Transakcija"));
                                 em.persist(RacDo1);
                                 em.persist(trans1);
                             break;
@@ -262,6 +332,10 @@ public class Main {
                                 trans2.setSvrha(svrha2);
                                 trans2.setRedniBroj(brTransOd2 + 1);
                                 trans2.setIdRacunOd(RacOd2);
+                                c1 = new Container(new Racun(RacOd2), "Racun");
+                                c1.setMerge();
+                                updateList.add(c1);
+                                updateList.add(new Container(new Transakcija(trans2), "Transakcija"));
                                 em.persist(RacOd2);
                                 em.persist(trans2);
                             break;
@@ -293,15 +367,38 @@ public class Main {
                 }
             } catch (JMSException ex) {
                 Logger.getLogger(Main.class.getName()).log(Level.SEVERE, null, ex);
-            }finally{
-                em.close();
-                emf.close();
             }
     }
     }
-    public static void main(String[] args) {
-        Main m = new Main();
-        m.runClient();
+    
+    void listenBackup(){
+        System.out.println("Ceka backup..");
+        Message msg = backupConsumer.receive();
+        System.out.println("Primio Backup Zahtev");
+        System.out.println(updateList);
+        producer.send(backupTopic, context.createObjectMessage(updateList));
+        updateList.clear(); //moze doci do race condition
     }
+    
+    @Override
+    public void run() {
+        while(!Thread.interrupted()){
+            listenBackup();
+        }
+    }
+    
+    public static void main(String[] args) {
+        try {
+            Main m = new Main();
+            Thread t = new Thread(m);
+            t.start();
+            m.runClient();
+            t.join();
+        } catch (InterruptedException ex) {
+            Logger.getLogger(Main.class.getName()).log(Level.SEVERE, null, ex);
+        }
+    }
+
+    
     
 }

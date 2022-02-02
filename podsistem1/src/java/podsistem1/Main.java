@@ -5,10 +5,10 @@
  */
 package podsistem1;
 
+import container.Container;
 import entities.Filijala;
 import entities.Komitent;
 import entities.Mesto;
-import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.logging.Level;
@@ -24,9 +24,9 @@ import javax.jms.ObjectMessage;
 import javax.jms.Queue;
 import javax.jms.Topic;
 import javax.json.Json;
-import javax.json.JsonArray;
 import javax.json.JsonArrayBuilder;
 import javax.json.JsonObject;
+import javax.json.JsonObjectBuilder;
 import javax.persistence.EntityManager;
 import javax.persistence.EntityManagerFactory;
 import javax.persistence.Persistence;
@@ -36,7 +36,7 @@ import javax.persistence.TypedQuery;
  *
  * @author HP
  */
-public class Main {
+public class Main implements Runnable{
 
     @Resource(lookup = "jms/__defaultConnectionFactory")
     static private ConnectionFactory cf;
@@ -47,17 +47,25 @@ public class Main {
     @Resource(lookup = "serverQueue")
     static public Queue serverQueue;
     
+    @Resource(lookup = "backupTopic")
+    static public Topic backupTopic;
+    
     JMSContext context;
     JMSConsumer consumer;
     JMSProducer producer;
     EntityManagerFactory emf;
     EntityManager em;
+    JMSConsumer backupConsumer;
+    static ArrayList<Container> updateList = new ArrayList<>();
     
     public Main(){
         context = cf.createContext();
-        context.setClientID("p2");
-        consumer = context.createDurableConsumer(topic, "p1", "p=1" , true);//dodati ovde filter
+        context.setClientID("p1");
+        consumer = context.createDurableConsumer(topic, "p1", "p=1" , true);
         producer = context.createProducer();
+        backupConsumer = context.createDurableConsumer(backupTopic, "po1", "p=1" , true);
+        emf = Persistence.createEntityManagerFactory("podsistem1PU");
+        em = emf.createEntityManager();
         System.out.println("Pokrecem podsistem 1");
     }
     
@@ -68,13 +76,66 @@ public class Main {
                 System.out.println("Ceka poruku");
                 Message msg = this.consumer.receive();
                 System.out.println("Primio");
-                emf = Persistence.createEntityManagerFactory("podsistem1PU");
-                em = emf.createEntityManager();
                 
                 if(msg.getBooleanProperty("get")){
                     switch(msg.getStringProperty("tabela")){
+                        case "diff":
+                            JsonArrayBuilder listaMest= Json.createArrayBuilder();
+                            JsonArrayBuilder listaFili= Json.createArrayBuilder();
+                            JsonArrayBuilder listaKomi= Json.createArrayBuilder();
+                            Mesto tmpMest;
+                            Filijala tmpFili;
+                            Komitent tmpKomi;
+                            
+                            for(Container c : updateList){
+                                switch(c.getIme()){
+                                    case "Mesto":
+                                        tmpMest = (Mesto)c.getKlasa();
+                                        System.out.println(tmpMest);
+                                        JsonObjectBuilder tmpObj1 = Json.createObjectBuilder()
+                                            .add("naziv", tmpMest.getNaziv())
+                                            .add("postanskiBroj", tmpMest.getPostanskiBroj());
+                                        if(tmpMest.getIdMesto()!=null){
+                                            tmpObj1.add("idMesto", tmpMest.getIdMesto());
+                                        }
+                                        listaMest.add(tmpObj1);
+                                        break;
+                                    case "Filijala":
+                                        tmpFili = (Filijala)c.getKlasa();
+                                        JsonObjectBuilder tmpObj2 = Json.createObjectBuilder()
+                                            .add("naziv", tmpFili.getNaziv())
+                                            .add("adresa", tmpFili.getAdresa())
+                                            .add("mesto", tmpFili.getIdMesto().getNaziv());
+                                        if(tmpFili.getIdFilijala() != null){
+                                            tmpObj2.add("idFilijala", tmpFili.getIdFilijala());
+                                        }
+                                        listaFili.add(tmpObj2);
+                                        break;
+                                    case "Komitent":
+                                        tmpKomi = (Komitent)c.getKlasa();
+                                        JsonObjectBuilder tmpObj3 = Json.createObjectBuilder()
+                                            .add("naziv", tmpKomi.getNaziv())
+                                            .add("adresa", tmpKomi.getAdresa())
+                                            .add("mesto", tmpKomi.getSediste().getNaziv());
+                                        
+                                        if(tmpKomi.getIdKomitent()!=null){
+                                            tmpObj3.add("idKomitent", tmpKomi.getIdKomitent());
+                                        }
+                                        listaKomi.add(tmpObj3);
+                                        break;
+                                        
+                                }
+                            }
+                            JsonObject toSend12 = Json.createObjectBuilder()
+                                .add("Mesta", listaMest)
+                                .add("Filijale", listaFili)
+                                .add("Komitenti", listaKomi).build();
+                            System.out.println(toSend12);
+                            omsg = context.createObjectMessage(toSend12.toString());
+                            omsg.setIntProperty("server", 1);
+                            producer.send(serverQueue, omsg);
+                            break;
                         case "mesto":
-                            System.out.println("mestoGet");
                             TypedQuery<Mesto> qMesta = em.createQuery("SELECT m FROM Mesto m", Mesto.class);
                             List<Mesto> mesta = qMesta.getResultList();
                             ArrayList<Mesto> mestaArray = new ArrayList<Mesto>(mesta);
@@ -96,7 +157,6 @@ public class Main {
 
                             
                         case "filijala":
-                            System.out.println("mestoGet");
                             TypedQuery<Filijala> qFilijala = em.createQuery("SELECT f FROM Filijala f", Filijala.class);
                             List<Filijala> filijale = qFilijala.getResultList();
                             ArrayList<Filijala> filijalaArray = new ArrayList<Filijala>(filijale);
@@ -118,7 +178,6 @@ public class Main {
                             break;
                         
                         case "komitent":
-                            System.out.println("mestoGet");
                             TypedQuery<Komitent> qKomitent = em.createQuery("SELECT k FROM Komitent k", Komitent.class);
                             List<Komitent> komitenti = qKomitent.getResultList();
                             ArrayList<Komitent> komitentArray = new ArrayList<Komitent>(komitenti);
@@ -141,7 +200,7 @@ public class Main {
                     }
                     producer.send(serverQueue, omsg);
                 }else if(msg.getBooleanProperty("post")){
-                    //upisi
+                    //post
                     try{
                         em.getTransaction().begin();
                         switch(msg.getStringProperty("tabela")){
@@ -151,6 +210,7 @@ public class Main {
                                 Mesto m = new Mesto();
                                 m.setNaziv(naziv);
                                 m.setPostanskiBroj(pb);
+                                updateList.add(new Container(new Mesto(m), "Mesto"));
                                 em.persist(m);
                                 break;
 
@@ -167,6 +227,13 @@ public class Main {
                                 f.setNaziv(nazivFilijale);
                                 f.setAdresa(adresaFilijale);
                                 f.setIdMesto(m1);
+                                Mesto tmpMesto = new Mesto(m1);
+                                Filijala tmpFilijala = new Filijala(f);
+                                tmpFilijala.setIdMesto(tmpMesto);
+                                Container c2 = new Container(tmpMesto, "Mesto");
+                                c2.setMerge();
+                                updateList.add(c2);
+                                updateList.add(new Container(tmpFilijala, "Filijala"));
                                 em.persist(f);
                                 break;
                                 
@@ -183,6 +250,7 @@ public class Main {
                                 k.setNaziv(nazivKomitenta);
                                 k.setAdresa(adresaKomitenta);
                                 k.setSediste(m2);
+                                updateList.add(new Container(new Komitent(k), "Komitent"));
                                 em.persist(k);
                                 break;
 
@@ -211,8 +279,10 @@ public class Main {
         
                                 if(sed == null) throw new Exception("Resource not found");
         
-                                int executeUpdate = em.createQuery("UPDATE  Komitent a SET a.sediste=:s WHERE a.idKomitent=:k", Komitent.class).setParameter("s", sed).setParameter("k",kom.getIdKomitent()).executeUpdate();
-                                System.out.println(executeUpdate);
+                                kom.setSediste(sed);
+                                Container c1 = new Container(new Komitent(kom), "Komitent");
+                                c1.setMerge();
+                                updateList.add(c1);
                                 break;
                         }
                         em.getTransaction().commit();
@@ -224,9 +294,6 @@ public class Main {
                 }
             } catch (JMSException ex) {
                 Logger.getLogger(Main.class.getName()).log(Level.SEVERE, null, ex);
-            }finally{
-                em.close();
-                emf.close();
             }
     }
     }
@@ -236,9 +303,36 @@ public class Main {
         em.close();
         emf.close();
     }
-    public static void main(String[] args) {
-        Main m = new Main();
-        m.runClient();
+    
+    void listenBackup(){
+        System.out.println("Ceka backup..");
+        Message msg = backupConsumer.receive();
+        System.out.println("Primio Backup Zahtev");
+        System.out.println(updateList);
+        producer.send(backupTopic, context.createObjectMessage(updateList));
+        updateList.clear(); //moze doci do race condition
     }
+    
+    @Override
+    public void run() {
+        while(!Thread.interrupted()){
+           listenBackup();
+       }
+    }
+    
+    public static void main(String[] args) {
+        try {
+            Main m = new Main();
+            Thread t = new Thread(m);
+            t.start();
+            m.runClient();
+            t.join();
+        } catch (InterruptedException ex) {
+            Logger.getLogger(Main.class.getName()).log(Level.SEVERE, null, ex);
+        }
+    }
+    
+    
+    
     
 }

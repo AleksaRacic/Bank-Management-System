@@ -88,7 +88,7 @@ public class FilijalaResource {
         
         System.out.println("PoslanaPoruka");
         producer.send(topic, msg);
-        Message receivedMessage = consumer.receive(1000);
+        Message receivedMessage = consumer.receive(10000);
         System.out.println("POST> primio poruku");
         if(receivedMessage instanceof ObjectMessage){
             try {
