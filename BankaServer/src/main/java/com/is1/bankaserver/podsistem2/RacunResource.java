@@ -3,11 +3,9 @@
  * To change this template file, choose Tools | Templates
  * and open the template in the editor.
  */
-package com.is1.bankaserver.podsistem1;
+package com.is1.bankaserver.podsistem2;
 
-
-import java.io.Serializable;
-import java.util.ArrayList;
+import com.is1.bankaserver.podsistem1.MestoResource;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import javax.annotation.Resource;
@@ -20,18 +18,22 @@ import javax.jms.JMSProducer;
 import javax.jms.Message;
 import javax.jms.ObjectMessage;
 import javax.jms.Queue;
-import javax.jms.TextMessage;
 import javax.jms.Topic;
 import javax.ws.rs.GET;
+import javax.ws.rs.PATCH;
 import javax.ws.rs.POST;
 import javax.ws.rs.Path;
 import javax.ws.rs.PathParam;
 import javax.ws.rs.core.Response;
 
+/**
+ *
+ * @author H
+ */
 
-@Path("mesto")
+@Path("racun")
 @Stateless
-public class MestoResource { 
+public class RacunResource {
     @Resource(lookup = "jms/__defaultConnectionFactory")
     public ConnectionFactory cf;
     
@@ -42,22 +44,20 @@ public class MestoResource {
     public Queue serverQueue;
     
     @POST
-    @Path("post/{naziv}/{PB}")
-    public Response postMesto(@PathParam("naziv") String naziv, @PathParam("PB") String pb){
+    @Path("post/{komitent}/{minus}")
+    public Response postRacun(@PathParam("komitent") int komitent, @PathParam("minus") int minus){
         
         JMSContext context = cf.createContext();
         JMSProducer producer = context.createProducer();
         Message msg = context.createMessage();
         
         try {
-            msg.setStringProperty("naziv", naziv);
-            msg.setStringProperty("pb", pb);
-            msg.setIntProperty("p", 1);
-            msg.setStringProperty("tabela", "mesto");
+            msg.setIntProperty("p", 2);
+            msg.setIntProperty("komitent", komitent);
+            msg.setIntProperty("minus", minus);
+            msg.setStringProperty("tabela", "racun");
             msg.setBooleanProperty("get", false);
             msg.setBooleanProperty("post", true);
-            
-            
         } catch (JMSException ex) {
             Logger.getLogger(MestoResource.class.getName()).log(Level.SEVERE, null, ex);
         }
@@ -69,19 +69,18 @@ public class MestoResource {
                 .build();
     }
     
-    
-    //TODO prebaciti try, catch blok iznad
     @GET
-    @Path("get")
-    public Response getMesto(){
+    @Path("get/{komitent}")
+    public Response getRacun(@PathParam("komitent") int komitent){
         JMSContext context = cf.createContext();
         JMSProducer producer = context.createProducer();
         JMSConsumer consumer = context.createConsumer(serverQueue);
         Message msg = context.createMessage();
         System.out.println("CheckpointGet\n\n");
         try {
-            msg.setStringProperty("tabela", "mesto");
-            msg.setIntProperty("p", 1);
+            msg.setStringProperty("tabela", "racun");
+            msg.setIntProperty("p", 2);
+            msg.setIntProperty("komitent", komitent);
             msg.setBooleanProperty("get", true);
         } catch (JMSException ex) {
             Logger.getLogger(MestoResource.class.getName()).log(Level.SEVERE, null, ex);
@@ -89,7 +88,7 @@ public class MestoResource {
         
         System.out.println("PoslanaPoruka");
         producer.send(topic, msg);
-        Message receivedMessage = consumer.receive(10000);
+        Message receivedMessage = consumer.receive(20000);
         System.out.println("POST> primio poruku");
         if(receivedMessage instanceof ObjectMessage){
             try {
@@ -107,6 +106,31 @@ public class MestoResource {
         context.close();
         return Response
                 .status(500)
+                .build();
+    }
+    
+    @PATCH
+    @Path("patch/{racun}")
+    public Response patchRacun(@PathParam("racun") int racun){
+        
+        JMSContext context = cf.createContext();
+        JMSProducer producer = context.createProducer();
+        Message msg = context.createMessage();
+        
+        try {
+            msg.setIntProperty("p", 2);
+            msg.setIntProperty("racun", racun);
+            msg.setStringProperty("tabela", "racun");
+            msg.setBooleanProperty("get", false);
+            msg.setBooleanProperty("post", false);
+        } catch (JMSException ex) {
+            Logger.getLogger(MestoResource.class.getName()).log(Level.SEVERE, null, ex);
+        }
+        producer.send(topic, msg);
+        System.out.println("PoslanaPoruka");
+        context.close();
+        return Response
+                .ok("ok")
                 .build();
     }
     

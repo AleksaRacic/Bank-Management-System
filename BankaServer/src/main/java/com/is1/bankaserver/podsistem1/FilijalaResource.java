@@ -56,6 +56,7 @@ public class FilijalaResource {
             msg.setIntProperty("p", 1);
             msg.setStringProperty("tabela", "filijala");
             msg.setBooleanProperty("get", false);
+            msg.setBooleanProperty("post", true);
         } catch (JMSException ex) {
             Logger.getLogger(MestoResource.class.getName()).log(Level.SEVERE, null, ex);
         }

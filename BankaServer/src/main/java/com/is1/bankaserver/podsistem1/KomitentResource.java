@@ -19,6 +19,7 @@ import javax.jms.ObjectMessage;
 import javax.jms.Queue;
 import javax.jms.Topic;
 import javax.ws.rs.GET;
+import javax.ws.rs.PATCH;
 import javax.ws.rs.POST;
 import javax.ws.rs.Path;
 import javax.ws.rs.PathParam;
@@ -55,6 +56,7 @@ public class KomitentResource {
             msg.setIntProperty("p", 1);
             msg.setStringProperty("tabela", "komitent");
             msg.setBooleanProperty("get", false);
+            msg.setBooleanProperty("post", true);
         } catch (JMSException ex) {
             Logger.getLogger(MestoResource.class.getName()).log(Level.SEVERE, null, ex);
         }
@@ -86,7 +88,7 @@ public class KomitentResource {
         
         System.out.println("PoslanaPoruka");
         producer.send(topic, msg);
-        Message receivedMessage = consumer.receive(10000);
+        Message receivedMessage = consumer.receive(20000);
         System.out.println("POST> primio poruku");
         if(receivedMessage instanceof ObjectMessage){
             try {
@@ -104,6 +106,31 @@ public class KomitentResource {
         context.close();
         return Response
                 .status(500)
+                .build();
+    }
+    
+    @PATCH
+    @Path("patch/{idK}/{naziv}")
+    public Response patchKomitent(@PathParam("naziv") String naziv, @PathParam("idK") int idk){
+        JMSContext context = cf.createContext();
+        JMSProducer producer = context.createProducer();
+        Message msg = context.createMessage();
+        //
+        try {
+            msg.setStringProperty("mesto", naziv);
+            msg.setIntProperty("idk", idk);
+            msg.setIntProperty("p", 1);
+            msg.setStringProperty("tabela", "komitent");
+            msg.setBooleanProperty("get", false);
+            msg.setBooleanProperty("post", false);
+        } catch (JMSException ex) {
+            Logger.getLogger(MestoResource.class.getName()).log(Level.SEVERE, null, ex);
+        }
+        producer.send(topic, msg);
+        System.out.println("PoslanaPoruka");
+        context.close();
+        return Response
+                .ok("ok")
                 .build();
     }
 }

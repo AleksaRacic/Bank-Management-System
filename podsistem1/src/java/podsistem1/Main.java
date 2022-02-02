@@ -55,15 +55,14 @@ public class Main {
     
     public Main(){
         context = cf.createContext();
-        context.setClientID("p1");
-        consumer = context.createDurableConsumer(topic, "p1", null , true);//dodati ovde filter
+        context.setClientID("p2");
+        consumer = context.createDurableConsumer(topic, "p1", "p=1" , true);//dodati ovde filter
         producer = context.createProducer();
         System.out.println("Pokrecem podsistem 1");
     }
     
     private void runClient(){
         ObjectMessage omsg = null;
-        Mesto tmpMesto;
         while(true){
             try {
                 System.out.println("Ceka poruku");
@@ -133,7 +132,7 @@ public class Main {
        
                             }
                             JsonObject komitentToSend = Json.createObjectBuilder()
-                                    .add("filijale", listaKomitenata).build();
+                                    .add("komitenti", listaKomitenata).build();
                             System.out.println(komitentToSend);
                             omsg = context.createObjectMessage(komitentToSend.toString());
                             omsg.setIntProperty("server", 1);
@@ -141,10 +140,9 @@ public class Main {
 
                     }
                     producer.send(serverQueue, omsg);
-                }else{
+                }else if(msg.getBooleanProperty("post")){
                     //upisi
                     try{
-                        System.out.println("mestoPost");
                         em.getTransaction().begin();
                         switch(msg.getStringProperty("tabela")){
                             case "mesto":
@@ -163,7 +161,7 @@ public class Main {
                                 TypedQuery<Mesto> q1 = em.createNamedQuery("Mesto.findByNaziv", Mesto.class).setParameter("naziv", mestoFilijale);
                                 Mesto m1 = q1.getSingleResult();
         
-                                if(m1 == null) break;
+                                if(m1 == null) throw new Exception("Resource not found");
 
                                 Filijala f = new Filijala();
                                 f.setNaziv(nazivFilijale);
@@ -179,7 +177,7 @@ public class Main {
                                 TypedQuery<Mesto> q2 = em.createNamedQuery("Mesto.findByNaziv", Mesto.class).setParameter("naziv", mestoKomitenta);
                                 Mesto m2 = q2.getSingleResult();
         
-                                if(m2 == null) break; //videti da se vraca posiljaocu losa poruka
+                                if(m2 == null) throw new Exception("Resource not found");
 
                                 Komitent k = new Komitent();
                                 k.setNaziv(nazivKomitenta);
@@ -190,10 +188,40 @@ public class Main {
 
                         }
                         em.getTransaction().commit();
+                    }catch(Exception e){
+                        System.out.println(e.getMessage());
                     }finally{
                         if(em.getTransaction().isActive()) em.getTransaction().rollback();
                     }
-                   }
+                   }else{
+                    //patch
+                    try{
+                        em.getTransaction().begin();
+                        switch(msg.getStringProperty("tabela")){
+                            case "komitent":
+                                int idK = msg.getIntProperty("idk");
+                                String nazivSedista = msg.getStringProperty("mesto");
+                                TypedQuery<Komitent> k1 = em.createNamedQuery("Komitent.findByIdKomitent", Komitent.class).setParameter("idKomitent", idK);
+                                Komitent kom = k1.getSingleResult();
+        
+                                if(kom == null) throw new Exception("Resource not found");
+        
+                                TypedQuery<Mesto> sediste = em.createNamedQuery("Mesto.findByNaziv", Mesto.class).setParameter("naziv", nazivSedista);
+                                Mesto sed = sediste.getSingleResult();
+        
+                                if(sed == null) throw new Exception("Resource not found");
+        
+                                int executeUpdate = em.createQuery("UPDATE  Komitent a SET a.sediste=:s WHERE a.idKomitent=:k", Komitent.class).setParameter("s", sed).setParameter("k",kom.getIdKomitent()).executeUpdate();
+                                System.out.println(executeUpdate);
+                                break;
+                        }
+                        em.getTransaction().commit();
+                    }catch(Exception e){
+                        System.out.println(e.getMessage());
+                    }finally{
+                        if(em.getTransaction().isActive()) em.getTransaction().rollback();
+                    }
+                }
             } catch (JMSException ex) {
                 Logger.getLogger(Main.class.getName()).log(Level.SEVERE, null, ex);
             }finally{
@@ -205,7 +233,6 @@ public class Main {
     
     @Override
     public void finalize() {
-        System.out.println("pozvan finalize");
         em.close();
         emf.close();
     }
